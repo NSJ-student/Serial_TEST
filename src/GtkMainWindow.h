@@ -12,6 +12,8 @@
 #include <gdk/gdk.h>
 #include <gdk/gdkwin32.h>
 
+#include "SerialPort.h"
+
 typedef gboolean (*def_callback_t)(void);
 typedef gboolean (*check_callback_t)(void);
 
@@ -20,11 +22,20 @@ public:
 	GtkMainWindow(GApplication *app);
 	virtual ~GtkMainWindow();
 
+	void set_serial_instance(SerialPort * serial);
+	gboolean refresh_serial_ports();
+	gboolean open_serial_ports();
+	gboolean close_serial_ports();
+	gboolean read_serial_data();
+	gboolean write_serial_data();
 
 private:
 	GtkWidget * gtk_window;
 	GtkWidget * gtk_hpaned_container;
+	GtkWidget * gtk_vbox;
+	GtkWidget * gtk_scroll;
 	GtkWidget * gtk_text_viewer;
+	GtkWidget * gtk_txt_input;
 	GtkWidget * gtk_notebook;
 
 	GtkWidget * gtk_notebook_page1;
@@ -36,6 +47,7 @@ private:
 
 	GtkWidget * gtk_notebook_page2;
 
+	SerialPort * inst_serial;
 };
 
 #endif /* SRC_GTKMAINWINDOW_H_ */

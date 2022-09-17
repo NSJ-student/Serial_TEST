@@ -17,7 +17,7 @@ static void on_app_activate(GApplication *app, gpointer data) {
 
     g_mainwindow = new GtkMainWindow(app);
     g_serialport = new SerialPort();
-    g_serialport->get_serial_ports();
+    g_mainwindow->set_serial_instance(g_serialport);
 
 	g_print("App activated finish\n");
 }
