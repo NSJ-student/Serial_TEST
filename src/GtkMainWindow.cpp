@@ -230,8 +230,9 @@ gboolean GtkMainWindow::write_serial_data()
     char temp_buff[145] = { 0 };
 
     gint length = sprintf_s(temp_buff, "%s\r\n", txt_input);
+    g_print("write: %s", temp_buff);
 	gint written;
-	if(inst_serial->write_data(temp_buff, length, &written))
+	if(!inst_serial->write_data(temp_buff, length, &written))
 	{
 	    g_printerr("fail to write serial\n");
 		return false;

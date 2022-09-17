@@ -286,9 +286,9 @@ gboolean SerialPort::close_serial_port()
 	//Closing the Serial Port
 	g_mutex_lock(&thread_data.mutex);
 	bool result = CloseHandle(hSerial);
+	hSerial = INVALID_HANDLE_VALUE;
     g_mutex_unlock(&thread_data.mutex);
 
-	hSerial = INVALID_HANDLE_VALUE;
     return result;
 }
 
@@ -414,6 +414,11 @@ static gpointer serial_rx_process(gpointer user_data)
 
 		    do
 		    {
+			    if (p_msg->handle == INVALID_HANDLE_VALUE)
+			    {
+					break;
+			    }
+
 				g_mutex_lock(&p_msg->mutex);
 		        Status = ReadFile(p_msg->handle, &ReadData, sizeof(ReadData), &NoBytesRead, NULL);
 		        p_msg->data_queue.push(ReadData);
