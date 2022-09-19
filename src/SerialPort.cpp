@@ -22,6 +22,8 @@ SerialPort::SerialPort() : hSerial(INVALID_HANDLE_VALUE)
 	thread_data.running = true;
 	thread_data.rx_processing = false;
 	thread_data.handle = hSerial;
+	thread_data.data_mutex = g_mutex_new();
+	thread_data.serial_mutex = g_mutex_new();
 
 	p_thread_serial_rx = g_thread_new("serial_rx", serial_rx_process, &thread_data);
 	if(p_thread_serial_rx == 0)
@@ -33,11 +35,16 @@ SerialPort::SerialPort() : hSerial(INVALID_HANDLE_VALUE)
 
 SerialPort::~SerialPort()
 {
+	close_serial_port();
+
 	if(thread_data.rx_processing)
 	{
 		thread_data.rx_processing = false;
 		g_thread_join (p_thread_serial_rx);
 	}
+
+	g_mutex_free(thread_data.data_mutex);
+	g_mutex_free(thread_data.serial_mutex);
 }
 
 void SerialPort::set_serial_rx_handler(void *parent, void (*fp)(void * user_data))
@@ -247,11 +254,11 @@ gboolean SerialPort::open_serial_port(const char *port, gint baudrate)
     	return false;
     }
     //Setting Timeouts
-    timeouts.ReadIntervalTimeout = 50;
-    timeouts.ReadTotalTimeoutConstant = 50;
-    timeouts.ReadTotalTimeoutMultiplier = 10;
-    timeouts.WriteTotalTimeoutConstant = 50;
-    timeouts.WriteTotalTimeoutMultiplier = 10;
+    timeouts.ReadIntervalTimeout = 1;
+    timeouts.ReadTotalTimeoutConstant = 1;
+    timeouts.ReadTotalTimeoutMultiplier = 0;
+    timeouts.WriteTotalTimeoutConstant = 0;
+    timeouts.WriteTotalTimeoutMultiplier = 1;
     if (SetCommTimeouts(hSerial, &timeouts) == FALSE)
     {
         CloseHandle(hSerial);//Closing the Serial Port
@@ -260,7 +267,7 @@ gboolean SerialPort::open_serial_port(const char *port, gint baudrate)
     }
 
     //Setting Receive Mask
-    Status = SetCommMask(hSerial, EV_RXCHAR);
+    Status = SetCommMask(hSerial, EV_RXCHAR|EV_BREAK|EV_ERR);
     if (Status == FALSE)
     {
     	g_printerr("Error to in Setting CommMask\n");
@@ -281,19 +288,34 @@ gboolean SerialPort::close_serial_port()
 	}
 
 	thread_data.rx_processing = false;
-	thread_data.data_queue = std::queue<char>();
 
 	//Closing the Serial Port
-	g_mutex_lock(&thread_data.mutex);
+	g_mutex_lock(thread_data.serial_mutex);
 	bool result = CloseHandle(hSerial);
 	hSerial = INVALID_HANDLE_VALUE;
-    g_mutex_unlock(&thread_data.mutex);
+	thread_data.data_queue = std::queue<char>();
+    g_mutex_unlock(thread_data.serial_mutex);
 
     return result;
 }
 
+gboolean SerialPort::is_serial_port_open()
+{
+	if (hSerial == INVALID_HANDLE_VALUE)
+	{
+		return false;
+	}
+
+	return true;
+}
+
 gint SerialPort::get_rx_size()
 {
+	if(!is_serial_port_open())
+	{
+		return 0;
+	}
+
 	return thread_data.data_queue.size();
 }
 
@@ -326,19 +348,22 @@ gboolean SerialPort::read_data(char *read_buff, gint read_size, gint *bytes_read
 	if(size < read_size)
 	{
 		int i = 0;
+		g_mutex_lock(thread_data.data_mutex);
 		while(get_rx_size() > 0)
 		{
 			read_buff[i] = get_rx_data();
 			i++;
 		}
 
-		if(bytes_read)	*bytes_read = size;
+		if(bytes_read)	*bytes_read = i;
 
+		g_mutex_unlock(thread_data.data_mutex);
 		return true;
 	}
 	else
 	{
 		int i = 0;
+		g_mutex_lock(thread_data.data_mutex);
 		while(get_rx_size() > 0)
 		{
 			read_buff[i] = get_rx_data();
@@ -349,8 +374,9 @@ gboolean SerialPort::read_data(char *read_buff, gint read_size, gint *bytes_read
 			}
 		}
 
-		if(bytes_read)	*bytes_read = read_size;
+		if(bytes_read)	*bytes_read = i;
 
+		g_mutex_unlock(thread_data.data_mutex);
 		return true;
 	}
 }
@@ -366,13 +392,13 @@ gboolean SerialPort::write_data(const char *write_buff, gint write_size, gint *b
 	}
 
     //Writing data to Serial Port
-	g_mutex_lock(&thread_data.mutex);
+	g_mutex_lock(thread_data.serial_mutex);
     Status = WriteFile(hSerial,// Handle to the Serialport
     					write_buff,            // Data to be written to the port
-						sizeof(write_size),   // No of bytes to write into the port
+						write_size,   // No of bytes to write into the port
 						&written,  // No of bytes written to the port
 						NULL);
-    g_mutex_unlock(&thread_data.mutex);
+    g_mutex_unlock(thread_data.serial_mutex);
     if (Status == FALSE)
     {
         printf_s("Fail to Written");
@@ -390,11 +416,11 @@ gboolean SerialPort::write_data(const char *write_buff, gint write_size, gint *b
 static gpointer serial_rx_process(gpointer user_data)
 {
 	serialMsg_t * p_msg = (serialMsg_t *)user_data;
-    gboolean   Status;
-    gint debug_count = 0;
-    DWORD dwEventMask;     // Event mask to trigger
-    char  ReadData;        // temperory Character
-    DWORD NoBytesRead;     // Bytes read by ReadFile()
+	gboolean   Status;
+	gint debug_count = 0;
+//	DWORD dwEventMask;     // Event mask to trigger
+	char  ReadData[256];        // temperory Character
+	DWORD NoBytesRead;     // Bytes read by ReadFile()
 
 	while(p_msg->running)
 	{
@@ -402,16 +428,26 @@ static gpointer serial_rx_process(gpointer user_data)
 
 		if(p_msg->rx_processing)
 		{
+		    /*
+			g_print("WaitCommEvent\n");
 		    //Setting WaitComm() Event
-			g_mutex_lock(&p_msg->mutex);
+			g_mutex_lock(p_msg->serial_mutex);
+			g_print("WaitCommEvent start\n");
 		    Status = WaitCommEvent(p_msg->handle, &dwEventMask, NULL); //Wait for the character to be received
-		    g_mutex_unlock(&p_msg->mutex);
+			g_print("WaitCommEvent end\n");
+		    g_mutex_unlock(p_msg->serial_mutex);
 		    if (Status == FALSE)
 		    {
-				g_usleep (1000);
+				g_print("WaitCommEvent fail\n");
 		        continue;
 		    }
 
+			g_print("event = 0x%X\n", dwEventMask);
+		    if ((dwEventMask & EV_RXCHAR) != EV_RXCHAR)
+		    {
+		    	continue;
+		    }
+			 */
 		    do
 		    {
 			    if (p_msg->handle == INVALID_HANDLE_VALUE)
@@ -419,17 +455,34 @@ static gpointer serial_rx_process(gpointer user_data)
 					break;
 			    }
 
-				g_mutex_lock(&p_msg->mutex);
-		        Status = ReadFile(p_msg->handle, &ReadData, sizeof(ReadData), &NoBytesRead, NULL);
-		        p_msg->data_queue.push(ReadData);
-			    g_mutex_unlock(&p_msg->mutex);
+			    NoBytesRead = 0;
+				g_mutex_lock(p_msg->serial_mutex);
+		        Status = ReadFile(p_msg->handle, ReadData, sizeof(ReadData), &NoBytesRead, NULL);
+			    g_mutex_unlock(p_msg->serial_mutex);
+			    if(Status==FALSE)
+			    {
+			    	break;
+			    }
+
+			    if(NoBytesRead > 0)
+			    {
+					g_mutex_lock(p_msg->data_mutex);
+					for(int i=0; i<NoBytesRead; i++)
+					{
+				        p_msg->data_queue.push(ReadData[i]);
+					}
+				    g_mutex_unlock(p_msg->data_mutex);
+			    }
 		    } while (NoBytesRead > 0);
 
-//			g_print("%d. byte received %d\n", debug_count, p_msg->data_queue.size());
+			g_usleep (100);
+		    /*
 			if(p_msg->fp_print_rx && p_msg->user_data)
 			{
+				//g_print("Print\n");
 				p_msg->fp_print_rx(p_msg->user_data);
 			}
+			*/
 		}
 
 		g_usleep (1000);

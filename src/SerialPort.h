@@ -30,7 +30,8 @@
 
 typedef struct _SerialMsg
 {
-	GMutex mutex;
+	GMutex *data_mutex;
+	GMutex *serial_mutex;
 	HANDLE handle;
 	bool running;
 	bool rx_processing;
@@ -49,8 +50,8 @@ public:
 	gboolean get_serial_ports(std::vector<std::string> &ports);
 	gboolean open_serial_port(const char *port, gint baudrate);
 	gboolean close_serial_port();
+	gboolean is_serial_port_open();
 	gint get_rx_size();
-	char get_rx_data();
 	gboolean read_data(char * read_buff, gint read_size, gint * bytes_read);
 	gboolean write_data(const char * write_buff, gint write_size, gint * bytes_written);
 
@@ -60,6 +61,8 @@ private:
 
     GThread * p_thread_serial_rx;
     serialMsg_t thread_data;
+
+	char get_rx_data();
 };
 
 #endif /* SRC_SERIALPORT_H_ */

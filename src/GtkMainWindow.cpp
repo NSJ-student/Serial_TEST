@@ -12,6 +12,9 @@ static void on_serial_open_clicked(GtkButton *btn, gpointer user_data);
 static void on_serial_close_clicked(GtkButton *btn, gpointer user_data);
 static void on_serial_data_received(gpointer user_data);
 static gboolean on_serial_write_input_pressed(GtkWidget *widget, GdkEventKey *event, gpointer user_data);
+static void on_text_viewer_clear_clicked(GtkButton *btn, gpointer user_data);
+static void scroll_changed (GtkWidget *scrolled_window, gpointer user_data);
+static gint callback_timer(gpointer user_data);
 
 /**********************************************/
 //	Class Methods
@@ -25,6 +28,7 @@ GtkMainWindow::GtkMainWindow(GApplication *app)
 	gtk_window = gtk_application_window_new(GTK_APPLICATION(app));
 	gtk_hpaned_container = gtk_hpaned_new();
 	gtk_vbox = gtk_vbox_new (false, 5);
+	gtk_btn_clear_text_viewer = gtk_button_new_with_label("Clear");
 	gtk_scroll = gtk_scrolled_window_new(NULL, NULL);
 	gtk_text_viewer = gtk_text_view_new ();
 	gtk_txt_input = gtk_entry_new();
@@ -33,10 +37,11 @@ GtkMainWindow::GtkMainWindow(GApplication *app)
 	// set text viewer
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (gtk_scroll),
                            GTK_POLICY_AUTOMATIC, GTK_POLICY_ALWAYS);
-    gtk_widget_set_size_request(GTK_WIDGET(gtk_scroll), 340, 480);
+    gtk_widget_set_size_request(GTK_WIDGET(gtk_scroll), 640, 480);
     gtk_container_add (GTK_CONTAINER (gtk_scroll), gtk_text_viewer);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(gtk_text_viewer), false);
     // set vbox
+    gtk_box_pack_start (GTK_BOX (gtk_vbox), gtk_btn_clear_text_viewer, false, false, 0);
     gtk_box_pack_start (GTK_BOX (gtk_vbox), gtk_scroll, true, true, 0);
     gtk_box_pack_start (GTK_BOX (gtk_vbox), gtk_txt_input, false, false, 0);
     // set control notebook
@@ -48,6 +53,9 @@ GtkMainWindow::GtkMainWindow(GApplication *app)
     gtk_paned_add1 (GTK_PANED(gtk_hpaned_container), gtk_vbox);
     gtk_paned_add2 (GTK_PANED(gtk_hpaned_container), gtk_notebook);
 
+    g_signal_connect(gtk_btn_clear_text_viewer, "clicked", G_CALLBACK(on_text_viewer_clear_clicked), this);
+    GtkAdjustment *adjustment = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW (gtk_scroll));
+    g_signal_connect (adjustment, "changed", G_CALLBACK(scroll_changed), this);
     g_signal_connect(gtk_txt_input, "key-release-event", G_CALLBACK(on_serial_write_input_pressed), this);
 //    g_signal_connect (gtk_hpaned_container, "button-release-event", G_CALLBACK(on_paned_handle_mouse_released), NULL);
 
@@ -58,25 +66,34 @@ GtkMainWindow::GtkMainWindow(GApplication *app)
 	GtkWidget * label = gtk_label_new ("Serial");
     gtk_notebook_append_page (GTK_NOTEBOOK(gtk_notebook), gtk_notebook_page1, label);
 
-    gtk_combo_port = gtk_combo_box_text_new_with_entry();
+    gtk_grid = gtk_grid_new();
+    gtk_grid_set_row_homogeneous(GTK_GRID(gtk_grid), true);
+	gtk_grid_set_column_homogeneous(GTK_GRID(gtk_grid), true);
+    gtk_grid_set_row_spacing(GTK_GRID(gtk_grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(gtk_grid), 5);
+
+    gtk_combo_port = gtk_combo_box_text_new();
     gtk_txt_baudrate = gtk_entry_new();
     gtk_btn_get_serialport = gtk_button_new_with_label("Refresh");
-
     gtk_btn_open_serial = gtk_button_new_with_label("Open");
     gtk_btn_close_serial = gtk_button_new_with_label("Close");
+    gtk_entry_set_text(GTK_ENTRY(gtk_txt_baudrate), "460800");
 
     g_signal_connect(gtk_btn_get_serialport, "clicked", G_CALLBACK(on_serialport_refresh_clicked), this);
     g_signal_connect(gtk_btn_open_serial, "clicked", G_CALLBACK(on_serial_open_clicked), this);
     g_signal_connect(gtk_btn_close_serial, "clicked", G_CALLBACK(on_serial_close_clicked), this);
 
-    gtk_fixed_put(GTK_FIXED(gtk_notebook_page1), GTK_WIDGET(gtk_combo_port), 10, 20);
-//    gtk_widget_set_size_request(GTK_WIDGET(gtk_combo_port), 200, 30);
-    gtk_fixed_put(GTK_FIXED(gtk_notebook_page1), GTK_WIDGET(gtk_btn_get_serialport), 220, 20);
-    gtk_fixed_put(GTK_FIXED(gtk_notebook_page1), GTK_WIDGET(gtk_txt_baudrate), 10, 60);
-    gtk_entry_set_text(GTK_ENTRY(gtk_txt_baudrate), "460800");
-//    gtk_widget_set_size_request(GTK_WIDGET(gtk_txt_baudrate), 200, 30);
-    gtk_fixed_put(GTK_FIXED(gtk_notebook_page1), GTK_WIDGET(gtk_btn_open_serial), 10, 100);
-    gtk_fixed_put(GTK_FIXED(gtk_notebook_page1), GTK_WIDGET(gtk_btn_close_serial), 80, 100);
+    gtk_container_add (GTK_CONTAINER (GTK_WIDGET(gtk_notebook_page1)), GTK_WIDGET(gtk_grid));
+    gtk_grid_attach(GTK_GRID(gtk_grid), gtk_combo_port,         0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(gtk_grid), gtk_btn_get_serialport, 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(gtk_grid), gtk_txt_baudrate,       0, 1, 2, 1);
+    gtk_grid_attach(GTK_GRID(gtk_grid), gtk_btn_open_serial,    0, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(gtk_grid), gtk_btn_close_serial,   1, 2, 1, 1);
+
+    gtk_widget_set_margin_start (gtk_grid, 10);
+    gtk_widget_set_margin_end (gtk_grid, 10);
+    gtk_widget_set_margin_top (gtk_grid, 15);
+    gtk_widget_set_margin_bottom (gtk_grid, 10);
 
     gtk_widget_set_sensitive (gtk_btn_close_serial, FALSE);
 
@@ -92,18 +109,26 @@ GtkMainWindow::GtkMainWindow(GApplication *app)
     /////  display the gtk_window
     //////////////////////////////
     gtk_widget_show_all(GTK_WIDGET(gtk_window));
+
+    //////////////////////////////
+    /////  timer
+    //////////////////////////////
+    serial_rx_timer_id = g_timeout_add(100, callback_timer, this);
 }
 
 GtkMainWindow::~GtkMainWindow()
 {
-	// TODO Auto-generated destructor stub
+	g_source_remove(serial_rx_timer_id);
 }
 
-
+/***********************/
+//	Serial function
+/***********************/
 void GtkMainWindow::set_serial_instance(SerialPort * serial)
 {
 	inst_serial = serial;
 	inst_serial->set_serial_rx_handler(this, on_serial_data_received);
+	refresh_serial_ports();
 }
 
 gboolean GtkMainWindow::refresh_serial_ports()
@@ -126,6 +151,11 @@ gboolean GtkMainWindow::refresh_serial_ports()
     {
     	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_combo_port), NULL, serial_ports.back().c_str());
     	serial_ports.pop_back();
+    }
+
+    if(port_count > 0)
+    {
+    	gtk_combo_box_set_active(GTK_COMBO_BOX(gtk_combo_port), 0);
     }
 
 	return true;
@@ -163,6 +193,9 @@ gboolean GtkMainWindow::open_serial_ports()
 		return false;
 	}
 
+    gtk_widget_set_sensitive (gtk_combo_port, FALSE);
+    gtk_widget_set_sensitive (gtk_btn_get_serialport, FALSE);
+    gtk_widget_set_sensitive (gtk_txt_baudrate, FALSE);
     gtk_widget_set_sensitive (gtk_btn_open_serial, FALSE);
     gtk_widget_set_sensitive (gtk_btn_close_serial, TRUE);
 
@@ -177,12 +210,15 @@ gboolean GtkMainWindow::close_serial_ports()
 		return false;
 	}
 
-	if(inst_serial->close_serial_port())
+	if(!inst_serial->close_serial_port())
 	{
 	    g_printerr("fail to close serial\n");
 		return false;
 	}
 
+    gtk_widget_set_sensitive (gtk_combo_port, TRUE);
+    gtk_widget_set_sensitive (gtk_btn_get_serialport, TRUE);
+    gtk_widget_set_sensitive (gtk_txt_baudrate, TRUE);
     gtk_widget_set_sensitive (gtk_btn_open_serial, TRUE);
     gtk_widget_set_sensitive (gtk_btn_close_serial, FALSE);
 
@@ -196,20 +232,26 @@ gboolean GtkMainWindow::read_serial_data()
 		return false;
 	}
 
-	char temp_buff[256] = {0};
-	gint bytes_read;
-	gboolean result = inst_serial->read_data(temp_buff, 255, &bytes_read);
-	if(!result)
+	g_print("read_serial_data start\n");
+	GtkTextBuffer * gtk_text_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(gtk_text_viewer));
+	while(inst_serial->get_rx_size() > 0)
 	{
-		return false;
+		gint buff_size = inst_serial->get_rx_size();
+		char temp_buff[buff_size+1] = {0};
+		gint bytes_read;
+		gboolean result = inst_serial->read_data(temp_buff, buff_size, &bytes_read);
+		if(!result)
+		{
+			return false;
+		}
+
+		GtkTextIter end;
+		gtk_text_buffer_get_end_iter (gtk_text_buffer, &end);
+		gtk_text_buffer_insert(gtk_text_buffer, &end, temp_buff, bytes_read);
 	}
 
-//	std::string str_read(temp_buff);
-	GtkTextBuffer * gtk_text_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(gtk_text_viewer));
-	GtkTextIter end;
-	gtk_text_buffer_get_end_iter (gtk_text_buffer, &end);
-	gtk_text_buffer_insert(gtk_text_buffer, &end, temp_buff, bytes_read);
-
+//	gtk_text_view_scroll_to_bottom();
+	g_print("read_serial_data end\n");
 	return true;
 }
 
@@ -230,7 +272,7 @@ gboolean GtkMainWindow::write_serial_data()
     char temp_buff[145] = { 0 };
 
     gint length = sprintf_s(temp_buff, "%s\r\n", txt_input);
-    g_print("write: %s", temp_buff);
+    g_print("write: %d / %s", length, temp_buff);
 	gint written;
 	if(!inst_serial->write_data(temp_buff, length, &written))
 	{
@@ -238,7 +280,33 @@ gboolean GtkMainWindow::write_serial_data()
 		return false;
 	}
 
+	gtk_entry_set_text(GTK_ENTRY(gtk_txt_input), "");
 	return true;
+}
+
+
+/***********************/
+//	UI function
+/***********************/
+
+void GtkMainWindow::gtk_text_view_scroll_to_bottom()
+{
+    GtkAdjustment *adjustment = gtk_scrolled_window_get_vadjustment (
+        GTK_SCROLLED_WINDOW (gtk_scroll));
+
+    double upper = gtk_adjustment_get_upper (adjustment);
+    double page_size = gtk_adjustment_get_page_size (adjustment);
+
+    gtk_adjustment_set_value (adjustment, upper - page_size);
+}
+
+void GtkMainWindow::gtk_text_view_clear()
+{
+	GtkTextIter start, end;
+	GtkTextBuffer * gtk_text_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(gtk_text_viewer));
+	gtk_text_buffer_get_start_iter (gtk_text_buffer, &start);
+	gtk_text_buffer_get_end_iter (gtk_text_buffer, &end);
+	gtk_text_buffer_delete (gtk_text_buffer, &start, &end);
 }
 
 
@@ -308,5 +376,42 @@ static gboolean on_serial_write_input_pressed(GtkWidget *widget, GdkEventKey *ev
 		p_main->write_serial_data();
 	}
 
+	return true;
+}
+
+static void on_text_viewer_clear_clicked(GtkButton *btn, gpointer user_data)
+{
+	GtkMainWindow * p_main = (GtkMainWindow *)user_data;
+
+	if(p_main == NULL)
+	{
+		return;
+	}
+
+	p_main->gtk_text_view_clear();
+}
+
+static void scroll_changed (GtkWidget *scrolled_window, gpointer user_data)
+{
+	GtkMainWindow * p_main = (GtkMainWindow *)user_data;
+
+	if(p_main == NULL)
+	{
+		return;
+	}
+
+	p_main->gtk_text_view_scroll_to_bottom();
+}
+
+static gint callback_timer(gpointer user_data)
+{
+	GtkMainWindow * p_main = (GtkMainWindow *)user_data;
+
+	if(p_main == NULL)
+	{
+		return true;
+	}
+
+	p_main->read_serial_data();
 	return true;
 }
