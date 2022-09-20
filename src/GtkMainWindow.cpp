@@ -299,7 +299,11 @@ gboolean GtkMainWindow::write_serial_data()
 
     if(is_ascii)
     {
+#ifdef WIN32
     	length = sprintf_s(temp_buff, "%s\r\n", txt_input);
+#else
+    	length = sprintf(temp_buff, "%s\r\n", txt_input);
+#endif
     }
     else
     {

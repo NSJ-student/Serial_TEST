@@ -7,7 +7,9 @@
 
 #include "UserSerialPort.h"
 
+#ifdef WIN32
 static gpointer serial_rx_process(gpointer user_data);
+#endif
 
 /**********************************************/
 //	Class Methods
@@ -23,12 +25,13 @@ UserSerialPort::UserSerialPort() : hSerial(INVALID_HANDLE_VALUE)
 	thread_data.data_mutex = g_mutex_new();
 	thread_data.serial_mutex = g_mutex_new();
 
+#ifdef WIN32
 	p_thread_serial_rx = g_thread_new("serial_rx", serial_rx_process, &thread_data);
 	if(p_thread_serial_rx == 0)
 	{
 		g_printerr("Error on pthread_create\n");
 	}
-
+#endif
 }
 
 UserSerialPort::~UserSerialPort()
@@ -53,6 +56,7 @@ void UserSerialPort::set_serial_rx_handler(void *parent, void (*fp)(void * user_
 
 gboolean UserSerialPort::get_serial_ports(std::vector<std::string> &ports)
 {
+#ifdef WIN32
 //    GUID*    guidDev  = (GUID*) &GUID_DEVINTERFACE_SERENUM_BUS_ENUMERATOR;
     GUID*    guidDev  = (GUID*) &GUID_DEVINTERFACE_COMPORT;
     HDEVINFO hDevInfo = INVALID_HANDLE_VALUE;
@@ -203,12 +207,13 @@ gboolean UserSerialPort::get_serial_ports(std::vector<std::string> &ports)
 
 	if (hDevInfo != INVALID_HANDLE_VALUE)
 		SetupDiDestroyDeviceInfoList(hDevInfo);
-
+#endif
 	return true;
 }
 
 gboolean UserSerialPort::open_serial_port(const char *port, gint baudrate)
 {
+#ifdef WIN32
     DCB dcbSerialParams = { 0 };  // Initializing DCB structure
     COMMTIMEOUTS timeouts = { 0 };  //Initializing timeouts structure
     char PortNo[20] = { 0 }; //contain friendly name
@@ -274,6 +279,67 @@ gboolean UserSerialPort::open_serial_port(const char *port, gint baudrate)
 	thread_data.rx_processing = true;
     g_print("open %s\n", PortNo);
     return true;
+#else
+    struct termios confSerial;
+
+    // Open the serial port. Change device path as needed (currently set to an standard FTDI USB-UART cable type device)
+    hSerial = open(port, O_RDWR);
+
+    // Read in existing settings, and handle any error
+    if(tcgetattr(hSerial, &oldConf) != 0) {
+        g_print("Error %i from tcgetattr: %s\n", errno, strerror(errno));
+        return false;
+    }
+
+    bzero(&confSerial, sizeof(confSerial));
+    confSerial.c_cflag = B115200 | CRTSCTS | CS8 | CLOCAL | CREAD;
+    confSerial.c_iflag = IGNPAR;
+    confSerial.c_oflag = 0;
+
+    /* set input mode (non-canonical, no echo,...) */
+    confSerial.c_lflag = 0;
+
+    confSerial.c_cc[VTIME]    = 0;   // inter-character timer unused
+    confSerial.c_cc[VMIN]     = 5;   // blocking read until 5 chars received
+
+    /*
+    confSerial.c_cflag &= ~PARENB; // Clear parity bit, disabling parity (most common)
+    confSerial.c_cflag &= ~CSTOPB; // Clear stop field, only one stop bit used in communication (most common)
+    confSerial.c_cflag &= ~CSIZE; // Clear all bits that set the data size
+    confSerial.c_cflag |= CS8; // 8 bits per byte (most common)
+    confSerial.c_cflag &= ~CRTSCTS; // Disable RTS/CTS hardware flow control (most common)
+    confSerial.c_cflag |= CREAD | CLOCAL; // Turn on READ & ignore ctrl lines (CLOCAL = 1)
+
+    confSerial.c_lflag &= ~ICANON;
+    confSerial.c_lflag &= ~ECHO; // Disable echo
+    confSerial.c_lflag &= ~ECHOE; // Disable erasure
+    confSerial.c_lflag &= ~ECHONL; // Disable new-line echo
+    confSerial.c_lflag &= ~ISIG; // Disable interpretation of INTR, QUIT and SUSP
+    confSerial.c_iflag &= ~(IXON | IXOFF | IXANY); // Turn off s/w flow ctrl
+    confSerial.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL); // Disable any special handling of received bytes
+
+    confSerial.c_oflag &= ~OPOST; // Prevent special interpretation of output bytes (e.g. newline chars)
+    confSerial.c_oflag &= ~ONLCR; // Prevent conversion of newline to carriage return/line feed
+    // confSerial.c_oflag &= ~OXTABS; // Prevent conversion of tabs to spaces (NOT PRESENT ON LINUX)
+    // confSerial.c_oflag &= ~ONOEOT; // Prevent removal of C-d chars (0x004) in output (NOT PRESENT ON LINUX)
+
+    confSerial.c_cc[VTIME] = 10;    // Wait for up to 1s (10 deciseconds), returning as soon as any data is received.
+    confSerial.c_cc[VMIN] = 0;
+
+    // Set in/out baud rate to be 9600
+    cfsetispeed(&confSerial, B9600);
+    cfsetospeed(&confSerial, B9600);
+     */
+
+    tcflush(hSerial, TCIFLUSH);
+    // Save confSerial settings, also checking for error
+    if (tcsetattr(hSerial, TCSANOW, &confSerial) != 0) {
+        printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
+        return false;
+    }
+
+    return true;
+#endif
 }
 
 gboolean UserSerialPort::close_serial_port()
@@ -287,7 +353,12 @@ gboolean UserSerialPort::close_serial_port()
 
 	//Closing the Serial Port
 	g_mutex_lock(thread_data.serial_mutex);
+#ifdef WIN32
 	bool result = CloseHandle(hSerial);
+#else
+    tcsetattr(hSerial,TCSANOW, &oldConf);
+	bool result = (close(hSerial)==0);
+#endif
 	hSerial = INVALID_HANDLE_VALUE;
 	thread_data.data_queue = std::queue<char>();
     g_mutex_unlock(thread_data.serial_mutex);
@@ -380,7 +451,9 @@ gboolean UserSerialPort::read_data(char *read_buff, gint read_size, gint *bytes_
 gboolean UserSerialPort::write_data(const char *write_buff, gint write_size, gint *bytes_written)
 {
     gboolean   Status;
+#ifdef WIN32
     DWORD written;
+#endif
 
 	if (hSerial == INVALID_HANDLE_VALUE)
 	{
@@ -389,19 +462,24 @@ gboolean UserSerialPort::write_data(const char *write_buff, gint write_size, gin
 
     //Writing data to Serial Port
 	g_mutex_lock(thread_data.serial_mutex);
+#ifdef WIN32
     Status = WriteFile(hSerial,// Handle to the Serialport
     					write_buff,            // Data to be written to the port
 						write_size,   // No of bytes to write into the port
 						&written,  // No of bytes written to the port
 						NULL);
+#else
+#endif
     g_mutex_unlock(thread_data.serial_mutex);
     if (Status == FALSE)
     {
-        printf_s("Fail to Written");
+        g_printerr("Fail to Written");
         return false;
     }
 
+#ifdef WIN32
     *bytes_written = written;
+#endif
     return true;
 }
 
@@ -409,6 +487,7 @@ gboolean UserSerialPort::write_data(const char *write_buff, gint write_size, gin
 //	callback functions
 /**********************************************/
 
+#ifdef WIN32
 static gpointer serial_rx_process(gpointer user_data)
 {
 	serialMsg_t * p_msg = (serialMsg_t *)user_data;
@@ -487,3 +566,4 @@ static gpointer serial_rx_process(gpointer user_data)
 	g_print("thread finish\n");
 	return 0;
 }
+#endif

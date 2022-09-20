@@ -25,14 +25,23 @@
 
 #define DEVICE_INFO_SZ 	100
 #else
+#include <fcntl.h> // Contains file controls like O_RDWR
+#include <errno.h> // Error integer and strerror() function
 #include <termios.h>
+#include <unistd.h>
+
+#define INVALID_HANDLE_VALUE	-1
 #endif
 
 typedef struct _SerialMsg
 {
 	GMutex *data_mutex;
 	GMutex *serial_mutex;
+#ifdef WIN32
 	HANDLE handle;
+#else
+    int handle;
+#endif
 	bool running;
 	bool rx_processing;
 	std::queue<char> data_queue;
@@ -56,7 +65,12 @@ public:
 	gboolean write_data(const char * write_buff, gint write_size, gint * bytes_written);
 
 private:
+#ifdef WIN32
     HANDLE hSerial;  // Handle to the Serial port
+#else
+    int hSerial;
+    struct termios oldConf;
+#endif
 
     GThread * p_thread_serial_rx;
     serialMsg_t thread_data;
