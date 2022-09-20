@@ -71,19 +71,26 @@ GstPlayer::~GstPlayer() {
 
 void GstPlayer::set_video_sink(GdkWindow *sink)
 {
-//	gulong embed_xid;
-	HGDIOBJ embed_xid;
 
+#ifdef WIN32
+	HGDIOBJ embed_xid;
 	embed_xid = gdk_win32_window_get_handle (sink);
+#else
+	gulong embed_xid;
+	embed_xid = gdk_x11_window_get_xid(sink);
+#endif
 	gst_video_overlay_set_window_handle(GST_VIDEO_OVERLAY(gst_video_sink), (guintptr)embed_xid);
 }
 
 void GstPlayer::set_camera_sink(GdkWindow *sink)
 {
-//	gulong embed_xid;
+#ifdef WIN32
 	HGDIOBJ embed_xid;
-
 	embed_xid = gdk_win32_window_get_handle (sink);
+#else
+	gulong embed_xid;
+	embed_xid = gdk_x11_window_get_xid(sink);
+#endif
 	gst_video_overlay_set_window_handle(GST_VIDEO_OVERLAY(gst_camera_sink), (guintptr)embed_xid);
 }
 

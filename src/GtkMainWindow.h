@@ -10,7 +10,11 @@
 
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
+#ifdef WIN32
 #include <gdk/gdkwin32.h>
+#else
+#include <gdk/gdkx.h>
+#endif
 #include "GstPlayer.h"
 
 typedef gboolean (*def_callback_t)(void);

@@ -10,7 +10,11 @@
 
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
+#ifdef WIN32
 #include <gdk/gdkwin32.h>
+#else
+#include <gdk/gdkx.h>
+#endif
 
 #include <gst/gst.h>
 #include <gst/video/videooverlay.h>
