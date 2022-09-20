@@ -6,6 +6,7 @@
  */
 
 #include "GtkMainWindow.h"
+#include "custom_string.h"
 
 static void on_serialport_refresh_clicked(GtkButton *btn, gpointer user_data);
 static void on_serial_open_clicked(GtkButton *btn, gpointer user_data);
@@ -26,24 +27,38 @@ GtkMainWindow::GtkMainWindow(GApplication *app)
     /////  main window
     //////////////////////////////
 	gtk_window = gtk_application_window_new(GTK_APPLICATION(app));
-	gtk_hpaned_container = gtk_hpaned_new();
-	gtk_vbox = gtk_vbox_new (false, 5);
+	gtk_hpaned_container = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+
+
+    /////  (left)output text view
+	gtk_vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 5);
 	gtk_btn_clear_text_viewer = gtk_button_new_with_label("Clear");
 	gtk_scroll = gtk_scrolled_window_new(NULL, NULL);
 	gtk_text_viewer = gtk_text_view_new ();
+	gtk_hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 5);
 	gtk_txt_input = gtk_entry_new();
+
+	gtk_radio_hex = gtk_radio_button_new_with_label (NULL, "HEX");
+	GSList * radio_group = gtk_radio_button_get_group (GTK_RADIO_BUTTON (gtk_radio_hex));
+	gtk_radio_ascii = gtk_radio_button_new_with_label (radio_group, "ASCII");
+    /////  (right) control
 	gtk_notebook  = gtk_notebook_new();
 
-	// set text viewer
+	// set text viewer scroll
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (gtk_scroll),
                            GTK_POLICY_AUTOMATIC, GTK_POLICY_ALWAYS);
     gtk_widget_set_size_request(GTK_WIDGET(gtk_scroll), 640, 480);
     gtk_container_add (GTK_CONTAINER (gtk_scroll), gtk_text_viewer);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(gtk_text_viewer), false);
+    // set text input & option
+    gtk_toggle_button_set_active  (GTK_TOGGLE_BUTTON(gtk_radio_ascii), true);
+    gtk_box_pack_start (GTK_BOX (gtk_hbox), gtk_txt_input, true, true, 0);
+    gtk_box_pack_start (GTK_BOX (gtk_hbox), gtk_radio_hex, false, false, 0);
+    gtk_box_pack_start (GTK_BOX (gtk_hbox), gtk_radio_ascii, false, false, 5);
     // set vbox
     gtk_box_pack_start (GTK_BOX (gtk_vbox), gtk_btn_clear_text_viewer, false, false, 0);
     gtk_box_pack_start (GTK_BOX (gtk_vbox), gtk_scroll, true, true, 0);
-    gtk_box_pack_start (GTK_BOX (gtk_vbox), gtk_txt_input, false, false, 0);
+    gtk_box_pack_start (GTK_BOX (gtk_vbox), gtk_hbox, false, false, 0);
     // set control notebook
     gtk_widget_set_size_request(GTK_WIDGET(gtk_notebook), 300, 480);
     gtk_notebook_set_tab_pos (GTK_NOTEBOOK(gtk_notebook), GTK_POS_TOP);
@@ -124,7 +139,7 @@ GtkMainWindow::~GtkMainWindow()
 /***********************/
 //	Serial function
 /***********************/
-void GtkMainWindow::set_serial_instance(SerialPort * serial)
+void GtkMainWindow::set_serial_instance(UserSerialPort * serial)
 {
 	inst_serial = serial;
 	inst_serial->set_serial_rx_handler(this, on_serial_data_received);
@@ -232,8 +247,9 @@ gboolean GtkMainWindow::read_serial_data()
 		return false;
 	}
 
-	g_print("read_serial_data start\n");
+	gboolean is_ascii = gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(gtk_radio_ascii));
 	GtkTextBuffer * gtk_text_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(gtk_text_viewer));
+    g_print("read: %d\r", inst_serial->get_rx_size());
 	while(inst_serial->get_rx_size() > 0)
 	{
 		gint buff_size = inst_serial->get_rx_size();
@@ -247,11 +263,19 @@ gboolean GtkMainWindow::read_serial_data()
 
 		GtkTextIter end;
 		gtk_text_buffer_get_end_iter (gtk_text_buffer, &end);
-		gtk_text_buffer_insert(gtk_text_buffer, &end, temp_buff, bytes_read);
+
+	    if(is_ascii)
+	    {
+			gtk_text_buffer_insert(gtk_text_buffer, &end, temp_buff, bytes_read);
+	    }
+	    else
+	    {
+	    	string temp_str = hex_array_to_string(temp_buff, bytes_read);
+			gtk_text_buffer_insert(gtk_text_buffer, &end, temp_str.c_str(), temp_str.length());
+	    }
 	}
 
 //	gtk_text_view_scroll_to_bottom();
-	g_print("read_serial_data end\n");
 	return true;
 }
 
@@ -262,6 +286,7 @@ gboolean GtkMainWindow::write_serial_data()
 		return false;
 	}
 
+	gboolean is_ascii = gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(gtk_radio_ascii));
 	const char * txt_input = gtk_entry_get_text(GTK_ENTRY(gtk_txt_input));
 	if(txt_input == 0)
 	{
@@ -269,17 +294,24 @@ gboolean GtkMainWindow::write_serial_data()
 		return false;
 	}
 
-    char temp_buff[145] = { 0 };
+    char temp_buff[256] = { 0 };
+    gint length, written;
 
-    gint length = sprintf_s(temp_buff, "%s\r\n", txt_input);
-    g_print("write: %d / %s", length, temp_buff);
-	gint written;
+    if(is_ascii)
+    {
+    	length = sprintf_s(temp_buff, "%s\r\n", txt_input);
+    }
+    else
+    {
+    	length = string_to_hex_array(txt_input, temp_buff, 256);
+    }
 	if(!inst_serial->write_data(temp_buff, length, &written))
 	{
 	    g_printerr("fail to write serial\n");
 		return false;
 	}
 
+    g_print("write: %d\r", length);
 	gtk_entry_set_text(GTK_ENTRY(gtk_txt_input), "");
 	return true;
 }

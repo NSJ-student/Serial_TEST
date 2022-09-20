@@ -1,11 +1,11 @@
 /*
- * SerialPort.cpp
+ * UserSerialPort.cpp
  *
  *  Created on: 2022. 9. 16.
  *      Author: Sujin
  */
 
-#include "SerialPort.h"
+#include "UserSerialPort.h"
 
 static gpointer serial_rx_process(gpointer user_data);
 
@@ -13,10 +13,8 @@ static gpointer serial_rx_process(gpointer user_data);
 //	Class Methods
 /**********************************************/
 
-SerialPort::SerialPort() : hSerial(INVALID_HANDLE_VALUE)
+UserSerialPort::UserSerialPort() : hSerial(INVALID_HANDLE_VALUE)
 {
-	guint64 s;
-
 	thread_data.user_data = 0;
 	thread_data.fp_print_rx = 0;
 	thread_data.running = true;
@@ -33,7 +31,7 @@ SerialPort::SerialPort() : hSerial(INVALID_HANDLE_VALUE)
 
 }
 
-SerialPort::~SerialPort()
+UserSerialPort::~UserSerialPort()
 {
 	close_serial_port();
 
@@ -47,13 +45,13 @@ SerialPort::~SerialPort()
 	g_mutex_free(thread_data.serial_mutex);
 }
 
-void SerialPort::set_serial_rx_handler(void *parent, void (*fp)(void * user_data))
+void UserSerialPort::set_serial_rx_handler(void *parent, void (*fp)(void * user_data))
 {
 	thread_data.fp_print_rx = fp;
 	thread_data.user_data = parent;
 }
 
-gboolean SerialPort::get_serial_ports(std::vector<std::string> &ports)
+gboolean UserSerialPort::get_serial_ports(std::vector<std::string> &ports)
 {
 //    GUID*    guidDev  = (GUID*) &GUID_DEVINTERFACE_SERENUM_BUS_ENUMERATOR;
     GUID*    guidDev  = (GUID*) &GUID_DEVINTERFACE_COMPORT;
@@ -101,7 +99,7 @@ gboolean SerialPort::get_serial_ports(std::vector<std::string> &ports)
                                                    &devdata );
             if ( bOk == TRUE )
             {
-                char * strDevPath = pDetData->DevicePath;
+//                char * strDevPath = pDetData->DevicePath;
 
                 wchar_t fname[256] = {0};
                 wchar_t desc[256] = {0};
@@ -150,14 +148,12 @@ gboolean SerialPort::get_serial_ports(std::vector<std::string> &ports)
                     }
                     ports.push_back(portn);
                     std::cout << portn << std::endl;
-                	g_print( "%s[%03d] %s (%s) %d %d %d\n",
+                	g_print( "%s[%03d] %s (%s) USB(%s)\n",
                              "COM Port",
                              cnt,
 							 (wchar_t*)wstrFname.c_str(),
                              (wchar_t*)desc,
-							 postkf,
-							 postke,
-							 wstrFname.length());
+							 bUsbDevice?"O":"X");
 
 /*
                     serialportinfo si;
@@ -211,7 +207,7 @@ gboolean SerialPort::get_serial_ports(std::vector<std::string> &ports)
 	return true;
 }
 
-gboolean SerialPort::open_serial_port(const char *port, gint baudrate)
+gboolean UserSerialPort::open_serial_port(const char *port, gint baudrate)
 {
     DCB dcbSerialParams = { 0 };  // Initializing DCB structure
     COMMTIMEOUTS timeouts = { 0 };  //Initializing timeouts structure
@@ -233,7 +229,7 @@ gboolean SerialPort::open_serial_port(const char *port, gint baudrate)
         return false;
     }
 
-    //Setting the Parameters for the SerialPort
+    //Setting the Parameters for the UserSerialPort
     dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
     Status = GetCommState(hSerial, &dcbSerialParams); //retreives  the current settings
     if (Status == FALSE)
@@ -280,7 +276,7 @@ gboolean SerialPort::open_serial_port(const char *port, gint baudrate)
     return true;
 }
 
-gboolean SerialPort::close_serial_port()
+gboolean UserSerialPort::close_serial_port()
 {
 	if(hSerial == INVALID_HANDLE_VALUE)
 	{
@@ -299,7 +295,7 @@ gboolean SerialPort::close_serial_port()
     return result;
 }
 
-gboolean SerialPort::is_serial_port_open()
+gboolean UserSerialPort::is_serial_port_open()
 {
 	if (hSerial == INVALID_HANDLE_VALUE)
 	{
@@ -309,7 +305,7 @@ gboolean SerialPort::is_serial_port_open()
 	return true;
 }
 
-gint SerialPort::get_rx_size()
+gint UserSerialPort::get_rx_size()
 {
 	if(!is_serial_port_open())
 	{
@@ -319,7 +315,7 @@ gint SerialPort::get_rx_size()
 	return thread_data.data_queue.size();
 }
 
-char SerialPort::get_rx_data()
+char UserSerialPort::get_rx_data()
 {
 	if(get_rx_size() == 0)
 	{
@@ -332,7 +328,7 @@ char SerialPort::get_rx_data()
 	return data;
 }
 
-gboolean SerialPort::read_data(char *read_buff, gint read_size, gint *bytes_read)
+gboolean UserSerialPort::read_data(char *read_buff, gint read_size, gint *bytes_read)
 {
 	gint size = get_rx_size();
 
@@ -381,7 +377,7 @@ gboolean SerialPort::read_data(char *read_buff, gint read_size, gint *bytes_read
 	}
 }
 
-gboolean SerialPort::write_data(const char *write_buff, gint write_size, gint *bytes_written)
+gboolean UserSerialPort::write_data(const char *write_buff, gint write_size, gint *bytes_written)
 {
     gboolean   Status;
     DWORD written;

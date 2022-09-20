@@ -1,12 +1,12 @@
 /*
- * SerialPort.h
+ * UserSerialPort.h
  *
  *  Created on: 2022. 9. 16.
  *      Author: Sujin
  */
 
-#ifndef SRC_SERIALPORT_H_
-#define SRC_SERIALPORT_H_
+#ifndef SRC_USERSERIALPORT_H_
+#define SRC_USERSERIALPORT_H_
 
 #include <gtk/gtk.h>
 #include <pthread.h>
@@ -15,7 +15,7 @@
 #include <queue>
 
 #ifdef WIN32
-#include "termiWin/termios.h"
+#include <winsock2.h>
 #include <locale>
 #include <codecvt>
 #include <Windows.h>
@@ -41,10 +41,10 @@ typedef struct _SerialMsg
 	void (*fp_print_rx)(gpointer user_data);
 } serialMsg_t;
 
-class SerialPort {
+class UserSerialPort {
 public:
-	SerialPort();
-	virtual ~SerialPort();
+	UserSerialPort();
+	virtual ~UserSerialPort();
 
 	void set_serial_rx_handler(void * parent, void (*fp)(gpointer user_data));
 	gboolean get_serial_ports(std::vector<std::string> &ports);
@@ -56,7 +56,6 @@ public:
 	gboolean write_data(const char * write_buff, gint write_size, gint * bytes_written);
 
 private:
-	struct termios  config;
     HANDLE hSerial;  // Handle to the Serial port
 
     GThread * p_thread_serial_rx;
@@ -65,4 +64,4 @@ private:
 	char get_rx_data();
 };
 
-#endif /* SRC_SERIALPORT_H_ */
+#endif /* SRC_USERSERIALPORT_H_ */
