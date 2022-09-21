@@ -25,6 +25,8 @@
 
 #define DEVICE_INFO_SZ 	100
 #else
+#include <sys/time.h>
+#include <sys/types.h>
 #include <fcntl.h> // Contains file controls like O_RDWR
 #include <errno.h> // Error integer and strerror() function
 #include <termios.h>
@@ -76,6 +78,9 @@ private:
     serialMsg_t thread_data;
 
 	char get_rx_data();
+#ifndef WIN32
+	guint baudrate_to_c_cflag(guint baudrate);
+#endif
 };
 
 #endif /* SRC_USERSERIALPORT_H_ */

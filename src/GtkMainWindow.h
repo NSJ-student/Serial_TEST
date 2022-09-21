@@ -58,7 +58,7 @@ private:
 			GtkWidget * gtk_grid;
 				GtkWidget * gtk_combo_port;
 				GtkWidget * gtk_btn_get_serialport;
-				GtkWidget * gtk_txt_baudrate;
+				GtkWidget * gtk_baudrate;
 				GtkWidget * gtk_btn_open_serial;
 				GtkWidget * gtk_btn_close_serial;
 

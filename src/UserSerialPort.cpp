@@ -7,9 +7,7 @@
 
 #include "UserSerialPort.h"
 
-#ifdef WIN32
 static gpointer serial_rx_process(gpointer user_data);
-#endif
 
 /**********************************************/
 //	Class Methods
@@ -25,13 +23,11 @@ UserSerialPort::UserSerialPort() : hSerial(INVALID_HANDLE_VALUE)
 	thread_data.data_mutex = g_mutex_new();
 	thread_data.serial_mutex = g_mutex_new();
 
-#ifdef WIN32
 	p_thread_serial_rx = g_thread_new("serial_rx", serial_rx_process, &thread_data);
 	if(p_thread_serial_rx == 0)
 	{
 		g_printerr("Error on pthread_create\n");
 	}
-#endif
 }
 
 UserSerialPort::~UserSerialPort()
@@ -207,6 +203,33 @@ gboolean UserSerialPort::get_serial_ports(std::vector<std::string> &ports)
 
 	if (hDevInfo != INVALID_HANDLE_VALUE)
 		SetupDiDestroyDeviceInfoList(hDevInfo);
+#else
+	DIR *d;
+	struct dirent *dir;
+
+	d = opendir("/dev");
+	if(d == NULL)
+	{
+		return false;
+	}
+
+	while ((dir = readdir(d)) != NULL)
+	{
+		if(!strncmp(dir->d_name, "ttyTHS", 6))
+		{
+	        ports.push_back(std::string(dir->d_name));
+		}
+		else if(!strncmp(dir->d_name, "ttyS", 4))
+		{
+	        ports.push_back(std::string(dir->d_name));
+		}
+		else if(!strncmp(dir->d_name, "ttyUSB", 6))
+		{
+	        ports.push_back(std::string(dir->d_name));
+		}
+	}
+
+	closedir(d);
 #endif
 	return true;
 }
@@ -282,8 +305,15 @@ gboolean UserSerialPort::open_serial_port(const char *port, gint baudrate)
 #else
     struct termios confSerial;
 
+    std::string dev_name("/dev/");
+    dev_name.append(std::string(port));
     // Open the serial port. Change device path as needed (currently set to an standard FTDI USB-UART cable type device)
-    hSerial = open(port, O_RDWR);
+    // need to [ sudo gpasswd --add &{USER} dialout ] [ sudo adduser $USER tty ]
+    hSerial = open(dev_name.c_str(), O_RDWR | O_NOCTTY);
+    if(hSerial < 0) {
+        g_print("Error %i from open: %s\n", errno, strerror(errno));
+        return false;
+    }
 
     // Read in existing settings, and handle any error
     if(tcgetattr(hSerial, &oldConf) != 0) {
@@ -292,7 +322,8 @@ gboolean UserSerialPort::open_serial_port(const char *port, gint baudrate)
     }
 
     bzero(&confSerial, sizeof(confSerial));
-    confSerial.c_cflag = B115200 | CRTSCTS | CS8 | CLOCAL | CREAD;
+    confSerial.c_cflag = CS8 | CLOCAL | CREAD;
+    confSerial.c_cflag |= baudrate_to_c_cflag(baudrate);
     confSerial.c_iflag = IGNPAR;
     confSerial.c_oflag = 0;
 
@@ -300,7 +331,7 @@ gboolean UserSerialPort::open_serial_port(const char *port, gint baudrate)
     confSerial.c_lflag = 0;
 
     confSerial.c_cc[VTIME]    = 0;   // inter-character timer unused
-    confSerial.c_cc[VMIN]     = 5;   // blocking read until 5 chars received
+    confSerial.c_cc[VMIN]     = 1;   // blocking read until 1 chars received
 
     /*
     confSerial.c_cflag &= ~PARENB; // Clear parity bit, disabling parity (most common)
@@ -338,6 +369,9 @@ gboolean UserSerialPort::open_serial_port(const char *port, gint baudrate)
         return false;
     }
 
+	thread_data.handle = hSerial;
+	thread_data.rx_processing = true;
+    g_print("open: %s : %d\n", dev_name.c_str(), hSerial);
     return true;
 #endif
 }
@@ -365,6 +399,33 @@ gboolean UserSerialPort::close_serial_port()
 
     return result;
 }
+
+#ifndef WIN32
+guint UserSerialPort::baudrate_to_c_cflag(guint baudrate)
+{
+	switch(baudrate)
+	{
+	case 2400:    return B2400;
+	case 4800:    return B4800;
+	case 9600:    return B9600;
+	case 19200:   return B19200;
+	case 38400:   return B38400;
+	case 57600:   return B57600;
+	case 115200:  return B115200;
+	case 230400:  return B230400;
+	case 460800:  return B460800;
+	case 500000:  return B500000;
+	case 576000:  return B576000;
+	case 921600:  return B921600;
+	case 1000000: return B1000000;
+	case 1152000: return B1152000;
+	default: {
+		g_printerr("invalid baudrate: %d\n", baudrate);
+		return 0;
+	}
+	}
+}
+#endif
 
 gboolean UserSerialPort::is_serial_port_open()
 {
@@ -453,6 +514,8 @@ gboolean UserSerialPort::write_data(const char *write_buff, gint write_size, gin
     gboolean   Status;
 #ifdef WIN32
     DWORD written;
+#else
+    ssize_t written;
 #endif
 
 	if (hSerial == INVALID_HANDLE_VALUE)
@@ -468,18 +531,22 @@ gboolean UserSerialPort::write_data(const char *write_buff, gint write_size, gin
 						write_size,   // No of bytes to write into the port
 						&written,  // No of bytes written to the port
 						NULL);
-#else
-#endif
     g_mutex_unlock(thread_data.serial_mutex);
     if (Status == FALSE)
     {
         g_printerr("Fail to Written");
         return false;
     }
-
-#ifdef WIN32
-    *bytes_written = written;
+#else
+    written = write(hSerial, write_buff, write_size);
+    g_mutex_unlock(thread_data.serial_mutex);
+	if(written < 0) {
+	   g_print("Error %i from write: %s\n", errno, strerror(errno));
+	   return false;
+	}
 #endif
+
+    *bytes_written = written;
     return true;
 }
 
@@ -487,7 +554,6 @@ gboolean UserSerialPort::write_data(const char *write_buff, gint write_size, gin
 //	callback functions
 /**********************************************/
 
-#ifdef WIN32
 static gpointer serial_rx_process(gpointer user_data)
 {
 	serialMsg_t * p_msg = (serialMsg_t *)user_data;
@@ -495,7 +561,12 @@ static gpointer serial_rx_process(gpointer user_data)
 	gint debug_count = 0;
 //	DWORD dwEventMask;     // Event mask to trigger
 	char  ReadData[256];        // temperory Character
+#ifdef WIN32
 	DWORD NoBytesRead;     // Bytes read by ReadFile()
+#else
+	ssize_t NoBytesRead;     // Bytes read by ReadFile()
+    fd_set readfs;    // file descriptor set
+#endif
 
 	while(p_msg->running)
 	{
@@ -530,6 +601,7 @@ static gpointer serial_rx_process(gpointer user_data)
 					break;
 			    }
 
+#ifdef WIN32
 			    NoBytesRead = 0;
 				g_mutex_lock(p_msg->serial_mutex);
 		        Status = ReadFile(p_msg->handle, ReadData, sizeof(ReadData), &NoBytesRead, NULL);
@@ -538,6 +610,23 @@ static gpointer serial_rx_process(gpointer user_data)
 			    {
 			    	break;
 			    }
+#else
+			    FD_SET(p_msg->handle, &readfs);
+				/* block until input becomes available */
+				select(p_msg->handle+1, &readfs, NULL, NULL, NULL);
+				if (!FD_ISSET(p_msg->handle, &readfs))         /* input from source 1 available */
+				{
+					break;
+				}
+
+				g_mutex_lock(p_msg->serial_mutex);
+				NoBytesRead = read(p_msg->handle, ReadData, sizeof(ReadData));
+			   g_mutex_unlock(p_msg->serial_mutex);
+			   if(NoBytesRead < 0) {
+				   g_print("Error %i from read: %s\n", errno, strerror(errno));
+				   break;
+			   }
+#endif
 
 			    if(NoBytesRead > 0)
 			    {
@@ -550,6 +639,7 @@ static gpointer serial_rx_process(gpointer user_data)
 			    }
 		    } while (NoBytesRead > 0);
 
+//			g_print("%d. read complete %d\n", debug_count, p_msg->data_queue.size());
 			g_usleep (100);
 		    /*
 			if(p_msg->fp_print_rx && p_msg->user_data)
@@ -566,4 +656,3 @@ static gpointer serial_rx_process(gpointer user_data)
 	g_print("thread finish\n");
 	return 0;
 }
-#endif

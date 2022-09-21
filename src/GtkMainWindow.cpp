@@ -50,6 +50,7 @@ GtkMainWindow::GtkMainWindow(GApplication *app)
     gtk_widget_set_size_request(GTK_WIDGET(gtk_scroll), 640, 480);
     gtk_container_add (GTK_CONTAINER (gtk_scroll), gtk_text_viewer);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(gtk_text_viewer), false);
+    gtk_widget_override_font(gtk_text_viewer, pango_font_description_from_string("Courier 10"));
     // set text input & option
     gtk_toggle_button_set_active  (GTK_TOGGLE_BUTTON(gtk_radio_ascii), true);
     gtk_box_pack_start (GTK_BOX (gtk_hbox), gtk_txt_input, true, true, 0);
@@ -88,11 +89,30 @@ GtkMainWindow::GtkMainWindow(GApplication *app)
     gtk_grid_set_column_spacing(GTK_GRID(gtk_grid), 5);
 
     gtk_combo_port = gtk_combo_box_text_new();
-    gtk_txt_baudrate = gtk_entry_new();
+#ifdef WIN32
+    gtk_baudrate = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(gtk_baudrate), "460800");
+#else
+	gtk_baudrate = gtk_combo_box_text_new();
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "2400");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "4800");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "9600");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "19200");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "38400");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "57600");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "115200");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "230400");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "460800");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "500000");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "576000");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "921600");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "1000000");
+	gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(gtk_baudrate), NULL, "1152000");
+	gtk_combo_box_set_active(GTK_COMBO_BOX(gtk_baudrate), 6);
+#endif
     gtk_btn_get_serialport = gtk_button_new_with_label("Refresh");
     gtk_btn_open_serial = gtk_button_new_with_label("Open");
     gtk_btn_close_serial = gtk_button_new_with_label("Close");
-    gtk_entry_set_text(GTK_ENTRY(gtk_txt_baudrate), "460800");
 
     g_signal_connect(gtk_btn_get_serialport, "clicked", G_CALLBACK(on_serialport_refresh_clicked), this);
     g_signal_connect(gtk_btn_open_serial, "clicked", G_CALLBACK(on_serial_open_clicked), this);
@@ -101,7 +121,7 @@ GtkMainWindow::GtkMainWindow(GApplication *app)
     gtk_container_add (GTK_CONTAINER (GTK_WIDGET(gtk_notebook_page1)), GTK_WIDGET(gtk_grid));
     gtk_grid_attach(GTK_GRID(gtk_grid), gtk_combo_port,         0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(gtk_grid), gtk_btn_get_serialport, 1, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(gtk_grid), gtk_txt_baudrate,       0, 1, 2, 1);
+    gtk_grid_attach(GTK_GRID(gtk_grid), gtk_baudrate,           0, 1, 2, 1);
     gtk_grid_attach(GTK_GRID(gtk_grid), gtk_btn_open_serial,    0, 2, 1, 1);
     gtk_grid_attach(GTK_GRID(gtk_grid), gtk_btn_close_serial,   1, 2, 1, 1);
 
@@ -184,7 +204,11 @@ gboolean GtkMainWindow::open_serial_ports()
 	}
 
 	char * serial_port = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(gtk_combo_port));
+#ifdef WIN32
 	const char * serial_baudrate = gtk_entry_get_text(GTK_ENTRY(gtk_txt_baudrate));
+#else
+	char * serial_baudrate = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(gtk_baudrate));
+#endif
 
 	if(serial_baudrate[0] == 0)
 	{
@@ -210,7 +234,7 @@ gboolean GtkMainWindow::open_serial_ports()
 
     gtk_widget_set_sensitive (gtk_combo_port, FALSE);
     gtk_widget_set_sensitive (gtk_btn_get_serialport, FALSE);
-    gtk_widget_set_sensitive (gtk_txt_baudrate, FALSE);
+    gtk_widget_set_sensitive (gtk_baudrate, FALSE);
     gtk_widget_set_sensitive (gtk_btn_open_serial, FALSE);
     gtk_widget_set_sensitive (gtk_btn_close_serial, TRUE);
 
@@ -233,7 +257,7 @@ gboolean GtkMainWindow::close_serial_ports()
 
     gtk_widget_set_sensitive (gtk_combo_port, TRUE);
     gtk_widget_set_sensitive (gtk_btn_get_serialport, TRUE);
-    gtk_widget_set_sensitive (gtk_txt_baudrate, TRUE);
+    gtk_widget_set_sensitive (gtk_baudrate, TRUE);
     gtk_widget_set_sensitive (gtk_btn_open_serial, TRUE);
     gtk_widget_set_sensitive (gtk_btn_close_serial, FALSE);
 
@@ -300,9 +324,9 @@ gboolean GtkMainWindow::write_serial_data()
     if(is_ascii)
     {
 #ifdef WIN32
-    	length = sprintf_s(temp_buff, "%s\r\n", txt_input);
+    	length = sprintf_s(temp_buff, "%s\n", txt_input);
 #else
-    	length = sprintf(temp_buff, "%s\r\n", txt_input);
+    	length = sprintf(temp_buff, "%s\n", txt_input);
 #endif
     }
     else
