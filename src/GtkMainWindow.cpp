@@ -205,7 +205,7 @@ gboolean GtkMainWindow::open_serial_ports()
 
 	char * serial_port = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(gtk_combo_port));
 #ifdef WIN32
-	const char * serial_baudrate = gtk_entry_get_text(GTK_ENTRY(gtk_txt_baudrate));
+	const char * serial_baudrate = gtk_entry_get_text(GTK_ENTRY(gtk_baudrate));
 #else
 	char * serial_baudrate = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(gtk_baudrate));
 #endif
